@@ -26,3 +26,8 @@ If the free AI quota is busy, search 40+ common (Indian + global) foods or add m
 ## Resume bullets (use your real numbers)
 - Built a zero-cost mobile PWA that estimates meal calories from photos via a serverless API and vision model, with an offline-capable search fallback.
 - Handled free-tier constraints with client-side downscaling, per-device and per-IP rate limits, and graceful degradation to a local food database.
+
+## If photo recognition fails
+1. Open `https://YOUR-APP.vercel.app/api/analyze` in a browser. It should show `"keyConfigured":true` and a list of `usableModels`. If the key is false, add `GEMINI_API_KEY` in Vercel and redeploy. If the list is empty, the key is wrong or not allowed.
+2. Take a photo again: the app now prints the technical reason under the message (e.g. `429` = free quota busy, `400 API key not valid`).
+3. Add a short description ("2 roti, dal, rice") for better results, or use "Estimate from description only" (no photo needed).

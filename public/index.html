@@ -116,8 +116,10 @@ input[type=range]{height:34px;padding:0;accent-color:var(--ac);border:0;backgrou
 <div class="grab"></div><h2>Add a meal</h2>
 <input id="f-cam" type="file" accept="image/*" capture="environment" class="hide">
 <input id="f-gal" type="file" accept="image/*" class="hide">
+<input id="hint" placeholder="Optional: describe it (e.g. 2 roti, dal, rice)" maxlength="200" style="margin-bottom:10px">
 <div class="big2"><button class="opt" id="o-cam"><i>📷</i>Take photo</button><button class="opt" id="o-gal"><i>🖼️</i>From gallery</button></div>
-<div class="err" id="err"></div>
+<button class="btn sec" id="o-txt" style="margin-top:10px;height:48px">✨ Estimate from description only</button>
+<div class="err" id="err"></div><div class="mut" id="dbg" style="text-align:center;word-break:break-word"></div>
 <h2 style="margin-top:18px">Search common foods <span class="mut">(free, no AI)</span></h2>
 <input id="q" placeholder="Search: roti, dal, biryani…" autocomplete="off"><div id="qres"></div>
 <h2 style="margin-top:18px">Or add manually</h2>
@@ -197,21 +199,23 @@ $("m-add").onclick=()=>{const n=$("m-name").value.trim(),k=parseInt($("m-kcal").
  if(!n||!(k>0)){$("err").textContent="Enter a food name and calories.";return}
  (S.log[today()]=S.log[today()]||[]).push({name:n,kcal:k,qty:"manual",type:defType()});
  $("m-name").value="";$("m-kcal").value="";save();sheet(null);tab("today");render()};
-async function onFile(e){
- const f=e.target.files[0];e.target.value="";if(!f)return;$("err").textContent="";
+async function onFile(e){const f=e.target.files[0];e.target.value="";if(f)go(f)}
+async function go(f){$("dbg").textContent="";$("err").textContent="";
  $("o-cam").disabled=$("o-gal").disabled=true;$("err").style.color="var(--mut)";$("err").textContent="🔍 Analyzing your meal…";
  try{
-  const out=await analyze(f);
+  const out=await analyze(f,$("hint").value.trim());
   const it=(out.items||[]).filter(x=>x.name&&x.g>0&&x.per100>0);
   if(!it.length)throw{code:"none"};
-  draft=it.map(x=>({name:x.name,g:+x.g,per100:+x.per100,m:1}));mealType=defType();
-  $("prev").classList.remove("hide");$("prev").src=URL.createObjectURL(f);renderDraft();$("err").textContent="";sheet("s-rev");
- }catch(x){$("err").style.color="var(--warn)";$("err").textContent=x.code==="none"?"No food found. Try a clearer, closer photo.":x.code==="rate"?"Free AI quota is busy. Try again in a minute, or search foods below.":x.code==="limit"?"Daily free photo limit reached. Search foods below instead (unlimited).":x.code==="img"?"Could not read that image.":"Couldn't analyze that photo. Try again or add manually."}
+  draft=it.map(x=>({name:x.name,g:+x.g,per100:dbKcal(x.name,+x.per100),m:1}));mealType=defType();
+  if(f){$("prev").classList.remove("hide");$("prev").src=URL.createObjectURL(f)}else $("prev").classList.add("hide");renderDraft();$("hint").value="";$("err").textContent="";sheet("s-rev");
+ }catch(x){$("dbg").textContent=x.detail||"";$("err").style.color="var(--warn)";$("err").textContent=x.code==="none"?"No food found. Try a clearer, closer photo.":x.code==="rate"?"Free AI quota is busy. Try again in a minute, or search foods below.":x.code==="limit"?"Daily free photo limit reached. Search foods below instead (unlimited).":x.code==="img"?"Could not read that image.":"Couldn't analyze that photo. Try again or add manually."}
  $("o-cam").disabled=$("o-gal").disabled=false}
+$("o-txt").onclick=()=>{if($("hint").value.trim().length<3){$("err").style.color="var(--warn)";$("err").textContent="Type what you ate first, e.g. 2 roti, dal, rice.";return}go(null)};
 $("f-cam").onchange=onFile;$("f-gal").onchange=onFile;
 function toJpeg(f){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{const m=1024,k=Math.min(1,m/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(img.src);res(c.toDataURL("image/jpeg",.82).split(",")[1])};img.onerror=()=>rej({code:"img"});img.src=URL.createObjectURL(f)})}
-async function analyze(f){const lk="pc_n_"+today();let n=0;try{n=+localStorage.getItem(lk)||0}catch(e){}if(n>=10)throw{code:"limit"};const image=await toJpeg(f);const r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image})});if(r.status===429)throw{code:"rate"};if(!r.ok)throw{code:"fail"};try{localStorage.setItem(lk,n+1)}catch(e){}return r.json()}
+async function analyze(f,hint){const lk="pc_n_"+today();let n=0;try{n=+localStorage.getItem(lk)||0}catch(e){}if(n>=10)throw{code:"limit"};const image=f?await toJpeg(f):undefined;const r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image,hint})});if(r.status===429)throw{code:"rate"};if(!r.ok){let d="";try{d=(await r.json()).detail||""}catch(e){}throw{code:"fail",detail:r.status+" "+d}};try{localStorage.setItem(lk,n+1)}catch(e){}return r.json()}
 if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));
+function dbKcal(n,def){n=n.toLowerCase().trim();for(const f of FOODS){const al=f[0].toLowerCase().replace(/\(.*?\)/g,"").split("/").map(a=>a.trim());if(al.some(a=>a.length>=4&&(n===a||n===a+"s")))return f[2]}return def}
 const FOODS=[["Roti / chapati",40,300],["Plain rice (cooked)",150,130],["Dal tadka",150,110],["Rajma curry",150,120],["Chole",150,150],["Paneer curry",150,200],["Palak paneer",150,150],["Chicken curry",150,170],["Aloo gobi",150,100],["Veg biryani",250,150],["Chicken biryani",250,175],["Khichdi",200,120],["Idli (2 pcs)",80,130],["Plain dosa",100,170],["Masala dosa",190,160],["Sambar",150,50],["Paratha (plain)",80,330],["Aloo paratha",120,260],["Naan",90,290],["Poha",150,130],["Upma",150,120],["Samosa",80,310],["Pakora",60,330],["Curd / dahi",100,60],["Boiled egg",50,155],["Omelette",100,185],["Bread slice",30,265],["Banana",120,90],["Apple",150,52],["Milk",200,62],["Tea with milk & sugar",150,45],["Coffee with milk & sugar",150,45],["Pizza slice",110,270],["Burger",150,250],["Pasta (cooked)",200,160],["Veg salad",100,25],["Gulab jamun",50,300],["Paneer tikka",100,250],["Maggi noodles (cooked)",200,140],["Peanuts",30,570],["Almonds",20,580]];
 $("q").oninput=()=>{const q=$("q").value.trim().toLowerCase();$("qres").innerHTML="";if(!q)return;
  FOODS.filter(f=>f[0].toLowerCase().includes(q)).slice(0,6).forEach(f=>{const b=document.createElement("button");b.className="meal";
